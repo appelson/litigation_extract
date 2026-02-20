@@ -1,0 +1,219 @@
+==================================================
+COMPLAINT TEXT
+
+{complaint_text}
+
+==================================================
+ROLE AND TASK
+
+You are a legal text analysis system. Your task is to read the complaint text above and extract structured data about incidents into a JSON array.
+
+An incident is a single, discrete event in which one or more plaintiffs experience one or more harms caused by one or more defendants at a specific location and time. When in doubt, treat one continuous encounter as one incident. Create separate incident objects only when distinct events occur at clearly different times or locations.
+
+==================================================
+PRIMARY OBJECTIVE
+
+Extract ONLY information explicitly stated in the complaint text. Do not infer, speculate, or fill in missing details. Use "" for any field that lacks explicit support in the text.
+
+==================================================
+OUTPUT SCHEMA
+
+Return a JSON array where each element is an incident object with this exact structure:
+
+[
+  {
+    "incident_id": "string: integer starting at 1",
+    "location_street": "string: street address if stated, otherwise \"\"",
+    "location_city": "string: city or town if stated, otherwise \"\"",
+    "location_county": "string: county if stated, otherwise \"\"",
+    "location_state": "string: two-letter state abbreviation if determinable (e.g., 'AK', 'CA'), otherwise \"\"",
+    "location_zip": "string: zip code if stated, otherwise \"\"",
+    "location_type": "string: see LOCATION TYPE options below",
+    "plaintiffs": [
+      {
+        "plaintiff_id": "string: globally unique integer starting at 1, incrementing across all incidents",
+        "name": "string: full name copied verbatim from the complaint, preserving original capitalization",
+        "race": "string: see RACE options below",
+        "gender": "string: see GENDER options below",
+        "disability_status": "string: see DISABILITY STATUS options below",
+        "immigration_status": "string: see IMMIGRATION STATUS options below"
+      }
+    ],
+    "defendants": [
+      {
+        "defendant_id": "string: globally unique integer starting at 1, incrementing across all incidents",
+        "name": "string: full name copied verbatim from the complaint, preserving original capitalization",
+        "race": "string: see RACE options below",
+        "gender": "string: see GENDER options below",
+        "doe_status": "string: see DOE STATUS options below",
+        "entity_type": "string: see ENTITY TYPE options below",
+        "agency": "string: agency name exactly as written, or \"\"",
+        "agency_type": "string: see AGENCY TYPE options below",
+        "role_in_incident": "string: see DEFENDANT ROLE options below."
+      }
+    ],
+    "harms": [
+      {
+        "type": "string: all applicable harm types as a single semicolon-separated string with no spaces (e.g., 'Excessive Force;Negligence;Police Killing'). See HARM TYPE options below. Do not use any harm types not listed in HARM TYPE options, even if explicitly named in the complaint.",
+        "associated_plaintiff_ids": "string: semicolon-separated list of plaintiff_id values associated with this harm (e.g., '1;3')",
+        "associated_defendant_ids": "string: semicolon-separated list of defendant_id values associated with this harm (e.g., '1;2')"
+      }
+    ]
+  }
+]
+
+==================================================
+CATEGORICAL OPTIONS
+
+All multi-value fields use semicolons as separators with no spaces (e.g., "Male;Disabled").
+
+--- RACE ---
+Select one. Semicolon-separate only if multiple races are explicitly stated. Mark as "multiracial" if explicitly stated.
+- "American Indian or Alaska Native"
+- "Asian"
+- "Black or African American"
+- "Hispanic or Latino"
+- "Middle Eastern or North African"
+- "Native Hawaiian or Other Pacific Islander"
+- "White"
+- "Multiracial"
+- "" (if not stated in complaint)
+- "Other"
+
+--- GENDER ---
+Select one. Semicolon-separate only if multiple genders are explicitly stated.
+- "Male"
+- "Female"
+- "Transgender Male"
+- "Transgender Female"
+- "Nonbinary"
+- "" (if not stated in complaint)
+- "Other"
+
+--- DISABILITY STATUS ---
+Select exactly one.
+- "Disabled" (any physical, mental, or developmental disability explicitly mentioned)
+- "Not disabled" (only if complaint explicitly states the person is not disabled)
+- "" (if not stated in complaint)
+- "Other"
+
+--- IMMIGRATION STATUS ---
+Select exactly one.
+- "Undocumented Immigrant"
+- "Documented Immigrant"
+- "Immigrant Unstated Documentation"
+- "Not an Immigrant"
+- "" (if not stated in complaint)
+- "Other"
+
+--- DOE STATUS ---
+Select exactly one.
+- "Doe" (defendant identified as John/Jane Doe or similar placeholder)
+- "Not Doe" (defendant identified by actual name)
+- "Other"
+
+--- ENTITY TYPE ---
+Select exactly one.
+- "Individual"
+- "Organization"
+- "Other"
+
+--- AGENCY TYPE ---
+Select exactly one.
+- "Sheriff's office"
+- "Local police department"
+- "Judicial enforcement"
+- "State law enforcement"
+- "Federal Law Enforcement (all except immigration)"
+- "Immigration Enforcement"
+- "Tribal law enforcement"
+- "Military law enforcement"
+- "Detention"
+- "Immigration Detention"
+- "School Police"
+- "University Police"
+- "" (if not stated in complaint)
+- "Other"
+
+--- DEFENDANT MAIN ROLE IN INCIDENT ---
+Select exactly one.
+- "Primary Actor" (directly caused the harm)
+- "Secondary Involvement" (assisted but was not the main actor)
+- "Authority" (supervisor or official with oversight responsibility)
+- "Bystander / Witness" (present but did not actively participate)
+- "" (if not stated in complaint)
+- "Other"
+
+--- HARM TYPE ---
+Semicolon-separate multiple harms (no spaces). Select all that apply. Do not use any harm types not listed here, even if they are explicitly stated in the complaint.
+- "Excessive Force"
+- "Negligence"
+- "Unlawful Arrest"
+- "Unlawful Search"
+- "Unlawful Stop"
+- "Unlawful Detention"
+- "Failure to Intervene"
+- "Failure to Provide Medical Care"
+- "Inhumane Conditions of Confinement"
+- "Retaliation"
+- "Discrimination"
+- "Racial Profiling"
+- "Verbal Harassment"
+- "Physical Harassment"
+- "Physical Assault"
+- "Sexual Harassment"
+- "Sexual Assault"
+- "Property Destruction"
+- "Unlawful Seizure"
+- "Fabrication of Evidence"
+- "Malicious Prosecution"
+- "Unlawful Weapon Use"
+- "Defamation"
+- "Police Killing"
+- "Infliction of Emotional Distress"
+- "Hiring Discrimination"
+- "Workplace Harassment"
+- "Intimidation and Coercion"
+- "" (if not stated in complaint)
+- "Other"
+
+--- LOCATION TYPE ---
+Select exactly one. Semicolon-separate only if the same incident clearly spans multiple distinct settings.
+- "Street"
+- "Highway"
+- "Sidewalk"
+- "Home"
+- "Apartment"
+- "School"
+- "Business"
+- "Parking lot"
+- "Public park"
+- "Jail"
+- "Prison"
+- "Immigration Detention"
+- "Police station"
+- "Hospital"
+- "Vehicle"
+- "Court"
+- "" (if not stated in complaint)
+- "Other"
+
+==================================================
+OUTPUT RULES
+
+1. Output ONLY a valid, parseable JSON array. No commentary, no markdown, no preamble.
+2. Use "" (empty string) for any missing value. Never leave a field null.
+3. Do not invent demographic information. Do not assume race, gender, disability, or immigration status.
+4. Create one harms object per distinct plaintiff-defendant pairing. If multiple plaintiffs experience the same harms from the same defendants in the same encounter, combine them into one harms object. If different plaintiffs experience different harms, or if different defendants caused different harms, create separate harms objects. Use semicolons to combine multiple harm types within a single harms object. If the plaintiffs or defendants associated with a harm are unknown, use "" for associated_plaintiff_ids or associated_defendant_ids.
+5. If multiple plaintiffs are harmed in the same encounter, include all of them under the same incident.
+6. All categorical values must EXACTLY match the allowed options listed below.
+7. Copy all names, organizations, and agencies verbatim from the complaint, preserving the original capitalization exactly (e.g., if the complaint uses ALL CAPS, output ALL CAPS).
+8. Incident location reflects where the incident OCCURRED, not the location of the court.
+
+==================================================
+BEFORE YOU OUTPUT
+
+Before writing any JSON, reason through the complaint carefully. Identify the key events, parties, locations, and facts. As part of this internal reasoning, number all plaintiffs and defendants per incident starting at 1, so their IDs are established before you write any harms references. Do not include any of this reasoning in your output; present only the final JSON array.
+
+==================================================
+BEGIN OUTPUT
