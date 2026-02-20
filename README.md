@@ -1,6 +1,6 @@
 # Legal Complaint Extraction Pipeline
 
-A pipeline for extracting structured data from federal civil rights complaint documents using LLMs. Raw complaint text is fed through a structured prompt, and the JSON outputs are parsed into relational tables for analysis.
+A pipeline for extracting structured data from federal civil rights complaint documents using LLMs. Raw complaint text extracted from complaint PDFs via Lex Machina is fed through a structured prompt, and the JSON outputs are parsed into relational tables for analysis.
 
 ---
 
