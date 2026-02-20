@@ -6,6 +6,8 @@ A pipeline for extracting structured data from federal civil rights complaint do
 
 ## Project Structure
 
+**NOTE:** The included dataset is built on a sample of 500 extracted complaints.
+
 ```
 project/
 ├── data/
