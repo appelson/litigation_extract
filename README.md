@@ -26,6 +26,7 @@ project/
 ├── 01_data_prep.R                      # Loads and cleans Lex Machina case + document data
 ├── 02_extraction.py                    # Runs LLM extraction across all complaint texts
 ├── 03_parse.py                         # Parses JSON outputs into relational tables
+├── 04_analysis.R                       # Conducts preliminary analysis on the data
 └── prompt.txt                          # Extraction prompt template
 ```
 
@@ -63,6 +64,14 @@ Lex Machina downloads (.xls + complaint files)
   • Joins document_id and case_id via file_id
   • Explodes harms and joins to plaintiff/defendant details
   • Outputs: 6 CSV tables (see Data Model below)
+
+  04_analysis.R
+  ─────────────────────────────────────────────────────────
+  • Geolocates the incidents using the Google Geolocation API
+  • Makes summaries for all categorical variables
+  • Creates a harm co-occurrence matrix
+
+
 ```
 
 ---
@@ -111,6 +120,10 @@ Enable or disable models in the `MODELS` config block. All enabled models run si
 ## Step 3: Parsing (`03_parse.py`)
 
 Parses raw JSON outputs into relational tables and builds junction tables linking harms to the specific plaintiffs and defendants involved.
+
+## Step 4: Analysis (`04_analysis.R`)
+
+Conducting preliminary analysis on the tables created in the previous step.
 
 ---
 
