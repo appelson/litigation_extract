@@ -23,6 +23,7 @@ Return a JSON array where each element is an incident object with this exact str
 [
   {
     "incident_id": "string: integer starting at 1",
+    "encounter_type": "string: see ENCOUNTER TYPE options below",
     "location_street": "string: street address if stated, otherwise \"\"",
     "location_city": "string: city or town if stated, otherwise \"\"",
     "location_county": "string: county if stated, otherwise \"\"",
@@ -36,7 +37,8 @@ Return a JSON array where each element is an incident object with this exact str
         "race": "string: see RACE options below",
         "gender": "string: see GENDER options below",
         "disability_status": "string: see DISABILITY STATUS options below",
-        "immigration_status": "string: see IMMIGRATION STATUS options below"
+        "immigration_status": "string: see IMMIGRATION STATUS options below",
+        "plaintiff_compliance": "string: see PLAINTIFF COMPLIANCE options below"
       }
     ],
     "defendants": [
@@ -66,6 +68,32 @@ Return a JSON array where each element is an incident object with this exact str
 CATEGORICAL OPTIONS
 
 All multi-value fields use semicolons as separators with no spaces (e.g., "Male;Disabled").
+
+--- ENCOUNTER TYPE ---
+Select exactly one reflecting the nature of the encounter or call that brought officers to the scene as alleged in the complaint.
+- "Violent Crime"
+- "Property Crime"
+- "Drug or Weapon Related"
+- "Traffic or Vehicle"
+- "Pedestrian or Street"
+- "Call for Service"
+- "Civil or Public Order"
+- "Warrant or Enforcement Action"
+- "Custodial"
+- "Retaliation"
+- "No Apparent Justification"
+- "Other"
+- "" (if not stated)
+
+--- PLAINTIFF COMPLIANCE ---
+Select exactly one reflecting the plaintiff's compliance state at the time of the incident as alleged in the complaint.
+- "Complying with Orders"
+- "Partially Complying with Orders"
+- "Non-Compliant"
+- "Unaware of Officer Presence"
+- "Unable to Comply"
+- "Other"
+- "" (if not stated)
 
 --- RACE ---
 Select one. Semicolon-separate only if multiple races are explicitly stated. Mark as "multiracial" if explicitly stated.
