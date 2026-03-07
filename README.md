@@ -1,13 +1,12 @@
 # Legal Complaint Extraction Pipeline
 
-A pipeline for extracting structured data from federal civil rights complaint documents using LLMs. Raw complaint text extracted from complaint PDFs via Lex Machina is fed through a structured prompt, and the JSON outputs are parsed into relational tables for analysis.
+A pipeline for extracting structured data from federal civil rights complaints using LLMs. Complaint texts sourced from Lex Machina are fed through a structured prompt, and the JSON outputs are parsed into relational tables for analysis.
 
-![Geolocation](images/geo_location.png)
+> **Note:** The included dataset is built on a sample of 500 extracted complaints.
+
 ---
 
 ## Project Structure
-
-**NOTE:** The included dataset is built on a sample of 500 extracted complaints.
 
 ```
 project/
@@ -16,17 +15,20 @@ project/
 │   ├── filtered_texts.csv              # Complaint texts matched to cases
 │   ├── text_documents.csv              # All text file metadata
 │   ├── pdf_documents.csv               # All PDF file metadata
-│   ├── openai_extracted_text/          # Raw LLM JSON outputs (.txt), one per complaint
+│   ├── extracted/
+│   │   └── {model}_extracted_text/     # Raw LLM JSON outputs (.txt), one per complaint
 │   ├── incidents_extract.csv           # Parsed incidents
 │   ├── plaintiffs_extract.csv          # Parsed plaintiffs
 │   ├── defendants_extract.csv          # Parsed defendants
 │   ├── harms_extract.csv               # Parsed harms (raw)
-│   ├── harms_plaintiffs.csv            # Harms joined to plaintiff details
-│   └── harms_defendants.csv            # Harms joined to defendant details
+│   ├── incidents_joined.csv            # Long-form join of all tables
+│   └── incidents_summary.csv           # One row per incident with collapsed fields
 ├── 01_data_prep.R                      # Loads and cleans Lex Machina case + document data
 ├── 02_extraction.py                    # Runs LLM extraction across all complaint texts
 ├── 03_parse.py                         # Parses JSON outputs into relational tables
-├── 04_analysis.R                       # Conducts preliminary analysis on the data
+├── 04_cleaning.R                       # Joins and summarises extracted tables
+├── 05_analysis.R                       # Geocodes incidents and runs descriptive analysis
+├── config.json                         # Paths, model settings, and run parameters
 └── prompt.txt                          # Extraction prompt template
 ```
 
@@ -40,11 +42,11 @@ Lex Machina downloads (.xls + complaint files)
          ▼
   01_data_prep.R
   ─────────────────────────────────────────────────────────
-  • Loads and deduplicates case metadata from Lex Machina exports
-  • Extracts state from court name
+  • Loads and deduplicates case metadata from three Lex Machina export batches
+  • Extracts state abbreviation from court name
   • Generates stable case_id and document_id MD5 hashes
   • Reads and decompresses complaint text (.gz)
-  • Filters to cases filed and terminated before 2025
+  • Filters to cases filed and terminated before DATE_CUTOFF
   • Outputs: filtered_cases.csv, filtered_texts.csv
          │
          ▼
@@ -52,78 +54,155 @@ Lex Machina downloads (.xls + complaint files)
   ─────────────────────────────────────────────────────────
   • Reads filtered_texts.csv
   • Fills complaint text into prompt.txt template
-  • Sends prompts to enabled LLMs asynchronously
-  • Skips already-processed files automatically
+  • Sends prompts to enabled LLMs asynchronously (up to BATCH_SIZE concurrent)
+  • Skips already-processed file_ids automatically
   • Saves one .txt JSON output per complaint per model
-  • Outputs: data/{model}_extracted_text/*.txt
+  • Outputs: data/extracted/{model}_extracted_text/*.txt + summary JSONs
          │
          ▼
   03_parse.py
   ─────────────────────────────────────────────────────────
   • Parses each .txt file from JSON into DataFrames
-  • Joins document_id and case_id via file_id
-  • Explodes harms and joins to plaintiff/defendant details
-  • Outputs: 6 CSV tables (see Data Model below)
-
-  04_analysis.R
+  • Assigns UUID primary keys to incidents, plaintiffs, defendants, and harms
+  • Joins document_id and case_id via file_id lookup
+  • Outputs: incidents_extract.csv, plaintiffs_extract.csv,
+             defendants_extract.csv, harms_extract.csv
+         │
+         ▼
+  04_cleaning.R
   ─────────────────────────────────────────────────────────
-  • Geolocates the incidents using the Google Geolocation API
-  • Makes summaries for all categorical variables
-  • Creates a harm co-occurrence matrix
-
-
+  • Joins all four tables into a long-form harm-plaintiff-defendant table
+  • Explodes semicolon-separated ID strings into individual rows
+  • Produces a one-row-per-incident summary with collapsed multi-value fields
+  • Outputs: incidents_joined.csv, incidents_summary.csv
+         │
+         ▼
+  05_analysis.R
+  ─────────────────────────────────────────────────────────
+  • Builds full addresses from extracted location fields
+  • Geocodes addresses via Google Maps API (with local cache)
+  • Renders an interactive Leaflet map colored by location type
+  • Prints frequency tables for all key categorical variables
+  • Produces a harm type co-occurrence heatmap (top 20 harm types)
 ```
 
 ---
 
-## Step 1: Data Preparation (`01_data_prep.R`)
+## Configuration (`config.json`)
+
+All paths and run parameters are set in `config.json`. No hardcoded paths appear in any script.
+
+### Paths
+
+| Key | Description |
+|---|---|
+| `raw_data_dir` | Directory containing Lex Machina `.xls` export files |
+| `raw_complaints_dir` | Directory containing downloaded complaint files (`.pdf`, `.txt.gz`) |
+| `data_dir` | Output directory for all processed CSVs |
+| `extract_dir` | Output directory for raw LLM JSON outputs |
+| `geocode_dir` | Cache directory for geocoded addresses |
+| `prompt_file` | Path to the extraction prompt template |
+
+### Parameters
+
+| Key | Default | Description |
+|---|---|---|
+| `date_cutoff` | `"2025-01-01"` | Excludes cases filed or terminated on or after this date |
+| `sample_size` | `500` | Number of complaints to sample; set to `null` to run all |
+| `batch_size` | `15` | Max concurrent API requests per model |
+| `batch_delay` | `0.1` | Seconds between batches |
+| `max_tokens` | `16384` | Max output tokens per LLM request |
+| `extract_model` | `"openai"` | Which model's outputs `03_parse.py` reads |
+
+### Models
+
+Enable or disable models in the `models` block. All enabled models run simultaneously in `02_extraction.py`.
+
+| Key | Model | Provider |
+|---|---|---|
+| `openai` | `gpt-4o-mini` | OpenAI |
+| `claude` | `claude-3-5-sonnet-20241022` | Anthropic |
+| `gemini` | `gemini-2.5-flash-lite` | Google |
+| `llama` | `Llama-3.3-70B-Instruct` | HuggingFace |
+| `deepseek` | `DeepSeek-V3.2` | HuggingFace |
+
+---
+
+## Setup
+
+### Environment variables
+
+Create a `.env` file in the project root:
+
+```
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+GOOGLE_API_KEY=...
+HUGGINGFACE_API_KEY=...
+GOOGLE_GEOCODE_API_KEY=...
+```
+
+### R dependencies
+
+```r
+install.packages(c("tidyverse", "digest", "janitor", "readxl", "readr",
+                   "jsonlite", "tidygeocoder", "ggmap", "leaflet"))
+```
+
+### Python dependencies
+
+```bash
+pip install pandas python-dotenv openai anthropic google-generativeai
+```
+
+---
+
+## Step-by-Step
+
+### Step 1 — Data Preparation (`01_data_prep.R`)
 
 Loads three batches of federal district court cases from Lex Machina exports, cleans and deduplicates them, and links them to downloaded complaint files.
 
+**ID generation:** `case_id` and `document_id` are MD5 hashes of `court + civil_action_number` (plus document numbers), producing stable, reproducible IDs across runs. `file_id` is an MD5 hash of the raw filename.
+
 **Key outputs:**
-
-- `filtered_cases.csv` — one row per case, with `case_id`, court, filing/termination dates, and case length
-- `filtered_texts.csv` — one row per complaint text file, with `file_id`, `document_id`, `case_id`, and extracted text content
-
-**ID generation:** `case_id` and `document_id` are MD5 hashes of court + case number (+ document numbers), producing stable, reproducible IDs across runs. `file_id` is an MD5 hash of the raw filename.
+- `filtered_cases.csv` — one row per case with `case_id`, court, filing/termination dates, and case length
+- `filtered_texts.csv` — one row per complaint with `file_id`, `document_id`, `case_id`, and decompressed text content
 
 ---
 
-## Step 2: LLM Extraction (`02_extraction.py`)
+### Step 2 — LLM Extraction (`02_extraction.py`)
 
 Sends each complaint through `prompt.txt` and saves the raw JSON response as a `.txt` file.
 
-**Supported models:**
+Output files are named `{file_id}_{model_name}_{timestamp}.txt` and saved to `data/extracted/{model}/`. A `summary_{timestamp}.json` per model and a `combined_summary_{timestamp}.json` are also written with runtime, token usage, and success/error counts.
 
-| Key | Model | Provider |
-|-----|-------|----------|
-| `openai` | gpt-4o-mini | OpenAI |
-| `claude` | claude-3-5-sonnet-20241022 | Anthropic |
-| `gemini` | gemini-2.5-flash-lite | Google |
-| `llama` | Llama-3.3-70B-Instruct | HuggingFace |
-| `deepseek` | DeepSeek-V3.2 | HuggingFace |
-
-Enable or disable models in the `MODELS` config block. All enabled models run simultaneously.
-
-**Key parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `BATCH_SIZE` | 15 | Max concurrent requests per model |
-| `BATCH_DELAY` | 1 | Seconds between batches |
-| `max_tokens` | 16384 | Max output tokens per request |
-
-**Output files** are saved to `data/{model}_extracted_text/` and named `{file_id}_{model_name}_{timestamp}.txt`. A `summary_{timestamp}.json` per model and a `combined_summary_{timestamp}.json` are also saved with runtime, token usage, and success/error counts.
+The script skips any `file_id` that already has a corresponding output file, so reruns are safe and incremental.
 
 ---
 
-## Step 3: Parsing (`03_parse.py`)
+### Step 3 — Parsing (`03_parse.py`)
 
-Parses raw JSON outputs into relational tables and builds junction tables linking harms to the specific plaintiffs and defendants involved.
+Parses raw JSON outputs into four relational tables. Each incident, plaintiff, defendant, and harm row is assigned a UUID primary key at parse time. `document_id` and `case_id` are joined in from `filtered_texts.csv` via `file_id`.
 
-## Step 4: Analysis (`04_analysis.R`)
+Failed parses are written to `failed_extractions.csv` for inspection.
 
-Conducting preliminary analysis on the tables created in the previous step.
+---
+
+### Step 4 — Joining & Summarising (`04_cleaning.R`)
+
+Joins all four tables into two output formats:
+
+- `incidents_joined.csv` — long-form, one row per harm-plaintiff-defendant combination
+- `incidents_summary.csv` — one row per incident, with multi-value fields (e.g. harm types, plaintiff names) collapsed into semicolon-separated strings
+
+---
+
+### Step 5 — Geocoding & Analysis (`05_analysis.R`)
+
+Builds the best available address from extracted location fields (`street > zip > city > county > state`) and geocodes via the Google Maps API. Results are cached locally so subsequent runs don't re-query already geocoded addresses.
+
+Outputs an interactive Leaflet map and prints frequency tables for all key categorical variables across incidents, plaintiffs, defendants, and harms. Also renders a co-occurrence heatmap for the top 20 harm types.
 
 ---
 
@@ -131,11 +210,15 @@ Conducting preliminary analysis on the tables created in the previous step.
 
 The prompt instructs the model to extract structured incident data from complaint text. Key design decisions:
 
-- **Incident definition:** A single discrete event at one location and time. Continuous encounters stay as one incident; clearly separate events become separate incidents.
-- **Strict extraction:** No inference or assumption. Empty string `""` for any field not explicitly stated in the text.
-- **IDs:** `plaintiff_id` and `defendant_id` are globally unique integers that increment across all incidents within a complaint, allowing harms to reference specific people by ID.
-- **Harms structure:** One harms object per distinct plaintiff-defendant pairing. Multiple harm types within a pairing are semicolon-separated. `associated_plaintiff_ids` and `associated_defendant_ids` store the relevant IDs.
-- **Pre-output sketch:** The model is instructed to sketch out all parties and number them before writing any JSON, reducing ID assignment errors.
+**Incident definition:** A single discrete event at one location and time. Continuous encounters are kept as one incident; clearly separate events become separate incidents.
+
+**Strict extraction:** No inference or assumption. Any field not explicitly stated in the text is returned as an empty string `""`.
+
+**ID assignment:** `plaintiff_id` and `defendant_id` are globally unique integers that increment across all incidents within a complaint, allowing harms to reference specific people by ID across incidents.
+
+**Harms structure:** One harms object per distinct plaintiff-defendant pairing. Multiple harm types within a pairing are semicolon-separated. `associated_plaintiff_ids` and `associated_defendant_ids` store the relevant integer IDs.
+
+**Pre-output sketch:** The model is instructed to enumerate all parties and assign their IDs before writing any JSON, which reduces ID assignment errors in complex multi-party complaints.
 
 ---
 
@@ -151,9 +234,9 @@ The prompt instructs the model to extract structured incident data from complain
                     │ document_id          │
                     │ case_id, ...         │
                     └──────────┬───────────┘
-                               |
+                               │
                              file_id
-                               |
+                               │
                                ▼
    ┌────────────────────────────────────────────────────────┐
    │                   incidents_extract                    │
@@ -175,106 +258,76 @@ The prompt instructs the model to extract structured incident data from complain
 │ plaintiff_id     │  │ harm_type           │  │ defendant_id     │
 │ name, race,      │  │ associated_         │  │ name, agency,    │
 │ gender, ...      │  │   plaintiff_ids     │  │ role, ...        │
-└────────┬─────────┘  │ associated_         │  └────────┬─────────┘
-         │            │   defendant_ids     │           │
-         │            └─────────┬───────────┘           │
-         │                      │                       │
-         │          IDs exploded + joined               │
-         │                      │                       │
-         │            ┌─────────┴─────────┐             │
-         │            │                   │             │
-         ▼            ▼                   ▼             ▼
-┌─────────────────────────────┐  ┌──────────────────────────────┐
-│      harms_plaintiffs       │  │       harms_defendants       │
-│─────────────────────────────│  │──────────────────────────────│
-│ harm_uuid                   │  │ harm_uuid                    │
-│ incident_uuid               │  │ incident_uuid                │
-│ plaintiff_id                │  │ defendant_id                 │
-│ plaintiff_uuid              │  │ defendant_uuid               │
-│ harm_type                   │  │ harm_type                    │
-│ plaintiff_name              │  │ defendant_name               │
-│ race, gender, ...           │  │ agency, role, ...            │
-└─────────────────────────────┘  └──────────────────────────────┘
+└──────────────────┘  │ associated_         │  └──────────────────┘
+                      │   defendant_ids     │
+                      └─────────────────────┘
+                                │
+                    IDs exploded + joined in 04_cleaning.R
+                                │
+               ┌────────────────┴─────────────────┐
+               ▼                                  ▼
+  incidents_joined.csv                 incidents_summary.csv
+  (long-form, one row per             (one row per incident,
+   harm × plaintiff × defendant)       fields collapsed)
 ```
-
-**How the junction tables are built:**
-1. `harms_extract` stores raw semicolon-separated ID strings
-2. These strings are split and exploded into one row per ID value
-3. Each row is joined to `plaintiffs_extract` or `defendants_extract` on `incident_uuid` + `plaintiff_id` / `defendant_id`
-4. The result is one row per harm-plaintiff pair (`harms_plaintiffs`) and one row per harm-defendant pair (`harms_defendants`)
 
 ---
 
-## Output Tables
+### Output Tables
 
-### `incidents_extract.csv`
+#### `incidents_extract.csv`
 One row per incident extracted from a complaint.
 
 | Column | Description |
-|--------|-------------|
+|---|---|
 | `source_file` | Raw extraction filename |
 | `incident_uuid` | Globally unique incident identifier, generated at parse time |
 | `file_id` | Links to `filtered_texts` |
-| `incident_id` | Integer assigned by model within this complaint (1, 2, 3...) |
-| `location_street / city / county / state / zip` | Where the incident occurred |
+| `incident_id` | Integer assigned by the model within this complaint (1, 2, 3…) |
+| `location_street` / `city` / `county` / `state` / `zip` | Where the incident occurred |
 | `location_type` | Categorical location (Street, Home, Jail, etc.) |
 | `document_id` | Joined from `filtered_texts` |
 | `case_id` | Joined from `filtered_texts` |
 
-### `plaintiffs_extract.csv`
+#### `plaintiffs_extract.csv`
 One row per plaintiff per incident.
 
 | Column | Description |
-|--------|-------------|
+|---|---|
 | `plaintiff_uuid` | Globally unique plaintiff row identifier |
 | `incident_uuid` | Links to `incidents_extract` |
-| `plaintiff_id` | Integer assigned by model; globally unique within a complaint |
+| `plaintiff_id` | Integer assigned by model; unique within a complaint |
 | `name` | Full name verbatim from complaint |
-| `race / gender / disability_status / immigration_status` | Extracted demographics |
+| `race` / `gender` / `disability_status` / `immigration_status` / `plaintiff_compliance` | Extracted demographics and behavior |
 
-### `defendants_extract.csv`
+#### `defendants_extract.csv`
 One row per defendant per incident.
 
 | Column | Description |
-|--------|-------------|
+|---|---|
 | `defendant_uuid` | Globally unique defendant row identifier |
 | `incident_uuid` | Links to `incidents_extract` |
-| `defendant_id` | Integer assigned by model, globally unique within a complaint |
+| `defendant_id` | Integer assigned by model; unique within a complaint |
 | `name` | Full name or organization name verbatim from complaint |
-| `doe_status` | Named individual (`Not Doe`) or placeholder (`Doe`) |
-| `entity_type` | Individual or Organization |
-| `agency / agency_type` | Agency name and categorical type |
+| `doe_status` | `Not Doe` (named) or `Doe` (placeholder) |
+| `entity_type` | `Individual` or `Organization` |
+| `agency` / `agency_type` | Agency name and categorical type |
 | `role_in_incident` | Primary Actor, Authority, Secondary Involvement, etc. |
 
-### `harms_extract.csv`
-One row per harm type per harms object. Raw table before junction expansion. Retains original semicolon-separated ID strings for reference.
+#### `harms_extract.csv`
+One row per harm type. Raw table before junction expansion; retains original semicolon-separated ID strings.
 
 | Column | Description |
-|--------|-------------|
+|---|---|
 | `harm_uuid` | Globally unique harm row identifier |
 | `incident_uuid` | Links to `incidents_extract` |
-| `harm_type` | Single harm category|
-| `associated_plaintiff_ids` | Raw semicolon-separated `plaintiff_id` values from model output |
-| `associated_defendant_ids` | Raw semicolon-separated `defendant_id` values from model output |
+| `harm_type` | Single harm category |
+| `harm_description` | Verbatim description from complaint |
+| `associated_plaintiff_ids` | Semicolon-separated `plaintiff_id` values |
+| `associated_defendant_ids` | Semicolon-separated `defendant_id` values |
 
-### `harms_plaintiffs.csv`
-Junction table. One row per harm-plaintiff pair. Use this for analysis by plaintiff demographics or to count harms per plaintiff.
+#### `incidents_joined.csv`
+Long-form join of all tables. One row per harm-plaintiff-defendant combination. Use for granular analysis.
 
-| Column | Description |
-|--------|-------------|
-| *(all harms_extract columns)* | |
-| `plaintiff_id` | Exploded from `associated_plaintiff_ids` |
-| `plaintiff_uuid` | Joined from `plaintiffs_extract` |
-| `plaintiff_name / race / gender / disability_status / immigration_status` | Joined plaintiff details |
-
-### `harms_defendants.csv`
-Junction table. One row per harm-defendant pair. Use this for analysis by agency, defendant role, or harm type.
-
-| Column | Description |
-|--------|-------------|
-| *(all harms_extract columns)* | |
-| `defendant_id` | Exploded from `associated_defendant_ids` |
-| `defendant_uuid` | Joined from `defendants_extract` |
-| `defendant_name / race / gender / doe_status / entity_type / agency / agency_type / role_in_incident` | Joined defendant details |
-
----
+#### `incidents_summary.csv`
+One row per incident. All multi-value fields (harm types, plaintiff names, agency names, etc.) are collapsed into semicolon-separated strings. Use for incident-level counts and filtering.
