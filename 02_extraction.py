@@ -9,6 +9,7 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
 
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
@@ -30,12 +31,13 @@ BATCH_SIZE    = cfg["parameters"]["batch_size"]
 BATCH_DELAY   = cfg["parameters"]["batch_delay"]
 MAX_TOKENS    = cfg["parameters"]["max_tokens"]
 
-MODELS = {k: {**v, "max_tokens": MAX_TOKENS} for k, v in cfg["models"].items()}
+load_dotenv()
+OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY")
+GOOGLE_API_KEY      = os.getenv("GOOGLE_API_KEY")
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
-OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY",      "")
-ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY",   "")
-GOOGLE_API_KEY      = os.getenv("GOOGLE_API_KEY",      "")
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
+MODELS = {k: {**v, "max_tokens": MAX_TOKENS} for k, v in cfg["models"].items()}
 
 SYSTEM_PROMPT = "You are a legal data extraction system. Respond ONLY with valid JSON."
 
