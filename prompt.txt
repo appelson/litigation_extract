@@ -55,6 +55,7 @@ Return a JSON array where each element is an incident object with this exact str
     ],
     "harms": [
       {
+        "harm_description": "string: a brief, <20 word description of the harm",
         "type": "string: all applicable harm types as a single semicolon-separated string with no spaces (e.g., 'Use of Force;Negligence or Failure to Intervene'). See HARM TYPE options below. Do not use any harm types not listed in HARM TYPE options, even if explicitly named in the complaint.",
         "associated_plaintiff_ids": "string: semicolon-separated list of plaintiff_id values associated with this harm (e.g., '1;3')",
         "associated_defendant_ids": "string: semicolon-separated list of defendant_id values associated with this harm (e.g., '1;2')"
