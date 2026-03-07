@@ -1,0 +1,47 @@
+{
+  "paths": {
+    "raw_data_dir":       "/Users/eljahappelson/Desktop/lex_data/",
+    "raw_complaints_dir": "/Users/eljahappelson/Desktop/lex_complaints/",
+    "data_dir":           "data/",
+    "extract_dir":        "data/extracted/",
+    "geocode_dir":        "data/geocoded/",
+    "prompt_file":        "prompt.txt"
+  },
+
+  "parameters": {
+    "date_cutoff":     "2025-01-01",
+    "sample_size":     500,
+    "batch_size":      15,
+    "batch_delay":     0.1,
+    "max_tokens":      16384,
+    "extract_model":   "openai"
+  },
+
+  "models": {
+    "openai": {
+      "model_name":  "gpt-4o-mini",
+      "enabled":     true,
+      "client_type": "openai"
+    },
+    "claude": {
+      "model_name":  "claude-3-5-sonnet-20241022",
+      "enabled":     false,
+      "client_type": "anthropic"
+    },
+    "gemini": {
+      "model_name":  "gemini-2.5-flash-lite",
+      "enabled":     false,
+      "client_type": "google"
+    },
+    "llama": {
+      "model_name":  "meta-llama/Llama-3.3-70B-Instruct",
+      "enabled":     false,
+      "client_type": "llama"
+    },
+    "deepseek": {
+      "model_name":  "deepseek-ai/DeepSeek-V3.2:novita",
+      "enabled":     false,
+      "client_type": "deepseek"
+    }
+  }
+}
