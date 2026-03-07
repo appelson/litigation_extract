@@ -1,224 +1,161 @@
-# Loading libraries
+# =============================================================================
+# 05_geocode_analyse.R
+# Geocodes incident addresses, maps them, and produces descriptive tables
+# for incidents, defendants, plaintiffs, and harms.
+#
+# Reads:  data/incidents_extract.csv
+#         data/defendants_extract.csv
+#         data/plaintiffs_extract.csv
+#         data/harms_extract.csv
+# Writes: data/geocoded/geocoded_addresses.csv  (cached look-up table)
+# =============================================================================
+
 library(tidyverse)
 library(janitor)
 library(tidygeocoder)
 library(ggmap)
 library(leaflet)
 
-# Defining Google Geolocation API Key
-register_google(key = "API_KEY")
+source("00_config.R")
+create_dirs()
 
-# Creating incidents dataframe
-incidents <- read_csv("data/incidents_extract.csv") %>%
-  select(
-    incident_uuid,
-    location_street,
-    location_city,
-    location_county,
-    location_state,
-    location_zip,
-    location_type
-  ) %>%
+# Register Google Geocoding API
+register_google(key = GOOGLE_GEOCODE_KEY)
+
+# ============================= INCIDENTS / GEOCODING =========================
+
+incidents_raw <- read_csv(INCIDENTS_CSV, show_col_types = FALSE) %>%
+  select(incident_uuid, starts_with("location_"))
+
+incidents <- incidents_raw %>%
   mutate(
+    # Build the most specific address string available
     full_address = case_when(
       !is.na(location_street) & !is.na(location_city) & !is.na(location_state) ~
-        paste0(paste(location_street, location_city, location_state, sep = ", "),
+        paste0(location_street, ", ", location_city, ", ", location_state,
                ifelse(!is.na(location_zip), paste0(" ", location_zip), "")),
-      !is.na(location_street) & !is.na(location_state) ~          # street + no city
-        paste0(paste(location_street, location_state, sep = ", "),
+      !is.na(location_street) & !is.na(location_state) ~
+        paste0(location_street, ", ", location_state,
                ifelse(!is.na(location_zip), paste0(" ", location_zip), "")),
       !is.na(location_city) & !is.na(location_state) ~
-        paste0(paste(location_city, location_state, sep = ", "),
+        paste0(location_city, ", ", location_state,
                ifelse(!is.na(location_zip), paste0(" ", location_zip), "")),
       !is.na(location_county) & !is.na(location_state) ~
-        paste(location_county, location_state, sep = ", "),
-      !is.na(location_zip) ~ location_zip,
+        paste0(location_county, ", ", location_state),
+      !is.na(location_zip)   ~ location_zip,
       !is.na(location_state) ~ location_state,
-      TRUE ~ NA
+      TRUE ~ NA_character_
     ),
-    location_granularity = case_when(
-      !is.na(location_street) ~ "street",
-      !is.na(location_zip)    ~ "zip",
-      !is.na(location_city)   ~ "city",
-      !is.na(location_county) ~ "county",
-      !is.na(location_state)  ~ "state",
-      TRUE                    ~ "none"
-    ) %>% ordered(levels = c("street", "zip", "city", "county", "state", "none"))
+    location_granularity = ordered(
+      case_when(
+        !is.na(location_street) ~ "street",
+        !is.na(location_zip)    ~ "zip",
+        !is.na(location_city)   ~ "city",
+        !is.na(location_county) ~ "county",
+        !is.na(location_state)  ~ "state",
+        TRUE                    ~ "none"
+      ),
+      levels = c("street", "zip", "city", "county", "state", "none")
+    )
   )
 
-# Geolocating addresses
-unique_addresses <- incidents %>%
-  filter(!is.na(full_address)) %>%
-  distinct(full_address) %>%
-  mutate_geocode(full_address)
+# ---- Geocode (cache results so re-runs are instant) -------------------------
 
-# Joining incidents with geolocation
+geocache_path <- file.path(GEOCODE_DIR, "geocoded_addresses.csv")
+
+if (file.exists(geocache_path)) {
+  geocoded <- read_csv(geocache_path, show_col_types = FALSE)
+  message("Loaded geocode cache: ", nrow(geocoded), " addresses")
+} else {
+  geocoded <- incidents %>%
+    filter(!is.na(full_address)) %>%
+    distinct(full_address) %>%
+    mutate_geocode(full_address)
+  write_csv(geocoded, geocache_path)
+  message("Geocoded and cached: ", nrow(geocoded), " addresses")
+}
+
 incidents <- incidents %>%
-  left_join(unique_addresses, by = "full_address")
-  
-# Creating a plot of addresses
+  left_join(geocoded, by = "full_address")
+
+# ---- Map --------------------------------------------------------------------
+
+pal <- colorFactor("Set1", incidents$location_type)
+
 leaflet(incidents %>% filter(!is.na(lat) & !is.na(lon))) %>%
   addTiles() %>%
   addCircleMarkers(
-    lng = ~lon,
-    lat = ~lat,
-    radius = 5,
-    color = ~colorFactor("Set1", location_type)(location_type),
+    lng         = ~lon, lat = ~lat,
+    radius      = 5,
+    color       = ~pal(location_type),
     fillOpacity = 0.7,
-    stroke = FALSE,
-    popup = ~paste0(
-      "<b>", location_type, "</b><br>",
-      full_address, "<br>",
-      incident_uuid
-    )
+    stroke      = FALSE,
+    popup       = ~paste0("<b>", location_type, "</b><br>", full_address, "<br>", incident_uuid)
   ) %>%
-  addLegend(
-    position = "bottomright",
-    pal = colorFactor("Set1", incidents$location_type),
-    values = ~location_type,
-    title = "Location Type"
-  )
+  addLegend(position = "bottomright", pal = pal, values = ~location_type, title = "Location Type")
 
-# Incident type count
-incidents %>%
-  tabyl(location_type) %>%
-  arrange(-n)
+# ---- Frequency tables -------------------------------------------------------
 
-# Location granularity count
-incidents %>%
-  tabyl(location_granularity) %>%
-  arrange(-n)
+cat("\n--- Location type ---\n");   print(tabyl(incidents, location_type)  %>% arrange(-n))
+cat("\n--- Granularity ---\n");     print(tabyl(incidents, location_granularity) %>% arrange(-n))
+cat("\n--- State ---\n");           print(count(incidents, location_state) %>% arrange(-n))
 
-# State count
-incidents %>%
-  count(location_state) %>%
-  arrange(-n)
+# ============================= DEFENDANTS ====================================
 
-# ------------------------------------------------------------------------------
+defendants <- read_csv(DEFENDANTS_CSV, show_col_types = FALSE) %>%
+  select(incident_uuid, defendant_id, name, race, gender,
+         doe_status, entity_type, agency, agency_type, role_in_incident) %>%
+  mutate(name = str_to_title(name), agency = str_to_title(agency))
 
-# Loading defendant data
-defendants <- read_csv("data/defendants_extract.csv") %>%
-  select(
-    incident_uuid,
-    defendant_id,
-    name,
-    race,
-    gender,
-    doe_status,
-    entity_type,
-    agency,
-    agency_type,
-    role_in_incident
-  ) %>%
-  mutate(
-    name = str_to_title(name),
-    agency = str_to_title(agency)
-  )
+cat("\n--- Defendant race ---\n");        print(tabyl(defendants, race))
+cat("\n--- Defendant gender ---\n");      print(tabyl(defendants, gender))
+cat("\n--- Doe status ---\n");            print(tabyl(defendants, doe_status))
+cat("\n--- Entity type ---\n");           print(tabyl(defendants, entity_type))
+cat("\n--- Agency (top 20) ---\n");       print(tabyl(defendants, agency) %>% arrange(-n) %>% head(20))
+cat("\n--- Agency type ---\n");           print(tabyl(defendants, agency_type))
+cat("\n--- Role in incident ---\n");      print(tabyl(defendants, role_in_incident))
 
-# Race count
-defendants %>%
-  tabyl(race)
+# ============================= PLAINTIFFS ====================================
 
-# Gender count
-defendants %>%
-  tabyl(gender)
+plaintiffs <- read_csv(PLAINTIFFS_CSV, show_col_types = FALSE) %>%
+  select(incident_uuid, plaintiff_id, name, race, gender,
+         disability_status, immigration_status) %>%
+  mutate(name = str_to_title(name))
 
-# Doe Status count
-defendants %>%
-  tabyl(doe_status)
+cat("\n--- Plaintiff race ---\n");        print(tabyl(plaintiffs, race))
+cat("\n--- Plaintiff gender ---\n");      print(tabyl(plaintiffs, gender))
+cat("\n--- Disability status ---\n");     print(tabyl(plaintiffs, disability_status))
+cat("\n--- Immigration status ---\n");    print(tabyl(plaintiffs, immigration_status))
 
-# Entity type count
-defendants %>%
-  tabyl(entity_type)
+# ============================= HARMS =========================================
 
-# Agency count
-defendants %>%
-  tabyl(agency) %>%
-  arrange(-n)
+harms <- read_csv(HARMS_CSV, show_col_types = FALSE) %>%
+  select(incident_uuid, harm_type, associated_plaintiff_ids, associated_defendant_ids)
 
-# Agency type count
-defendants %>%
-  tabyl(agency_type)
+cat("\n--- Harm type (all) ---\n");  print(tabyl(harms, harm_type) %>% arrange(-n))
 
-# Role count
-defendants %>%
-  tabyl(role_in_incident)
+# ---- Co-occurrence heatmap (top 20 harm types) ------------------------------
 
-# ------------------------------------------------------------------------------
-
-# Loading plaintiff data
-plaintiffs <- read_csv("data/plaintiffs_extract.csv") %>%
-  select(
-    incident_uuid,
-    plaintiff_id,
-    name,
-    race,
-    gender,
-    disability_status,
-    immigration_status
-  ) %>%
-  mutate(
-    name = str_to_title(name)
-  )
-
-# Race count
-plaintiffs %>%
-  tabyl(race)
-
-# Gender count
-plaintiffs %>%
-  tabyl(gender)
-
-# Disability count
-plaintiffs %>%
-  tabyl(disability_status)
-
-# Immigration count
-plaintiffs %>%
-  tabyl(immigration_status)
-
-# ------------------------------------------------------------------------------
-
-# Loading harms data
-harms <- read_csv("data/harms_extract.csv") %>%
-  select(
-    incident_uuid,
-    harm_type,
-    associated_plaintiff_ids,
-    associated_defendant_ids
-  )
-
-# Harm count
-harms %>%
-  tabyl(harm_type) %>%
-  arrange(-n)
-
-# Harm co-occurrence
-co_occurrence <- harms %>%
-  distinct(incident_uuid, harm_type) %>%
-  mutate(present = 1) %>%
-  pivot_wider(
-    id_cols = incident_uuid,
-    names_from = harm_type,
-    values_from = present,
-    values_fill = 0
-  ) %>%
-  select(-incident_uuid) %>%
-  { t(as.matrix(.)) %*% as.matrix(.) }
-
-# Harm co-occurence plot
-top_20_harms <- harms %>%
+top_harms <- harms %>%
   count(harm_type) %>%
   slice_max(n, n = 20) %>%
   pull(harm_type)
 
-co_occurrence %>%
+co_matrix <- harms %>%
+  distinct(incident_uuid, harm_type) %>%
+  mutate(present = 1L) %>%
+  pivot_wider(id_cols = incident_uuid, names_from = harm_type,
+              values_from = present, values_fill = 0L) %>%
+  select(-incident_uuid) %>%
+  { t(as.matrix(.)) %*% as.matrix(.) }
+
+co_matrix %>%
   as.data.frame() %>%
   rownames_to_column("harm1") %>%
   pivot_longer(-harm1, names_to = "harm2", values_to = "n") %>%
-  filter(harm1 %in% top_20_harms, harm2 %in% top_20_harms) %>%
-  filter(as.integer(factor(harm1)) < as.integer(factor(harm2))) %>%
-  mutate(across(c(harm1, harm2), ~str_trunc(., 20))) %>%
+  filter(harm1 %in% top_harms, harm2 %in% top_harms,
+         as.integer(factor(harm1)) < as.integer(factor(harm2))) %>%
+  mutate(across(c(harm1, harm2), ~ str_trunc(., 20))) %>%
   ggplot(aes(x = harm1, y = harm2, fill = n)) +
   geom_tile() +
   geom_text(aes(label = n), size = 3) +
