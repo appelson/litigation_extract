@@ -8,7 +8,7 @@ ROLE AND TASK
 
 You are a legal text analysis system. Your task is to read the complaint text above and extract structured data about incidents into a JSON array.
 
-An incident is a single, discrete event in which one or more plaintiffs experience one or more harms caused by one or more defendants at a specific location and time. When in doubt, treat one continuous encounter as one incident. Create separate incident objects only when distinct events occur at clearly different times or locations.
+An incident is a single, discrete event in which one or more plaintiffs experience one or more harms caused by one or more defendants at a specific location and time. When in doubt, treat one continuous encounter as one incident. Create separate incident objects only when distinct events occur at clearly different times or locations. If the same event is described multiple times across different causes of action or legal claims, create only one incident, do not duplicate incidents based on how claims are structured.
 
 ==================================================
 PRIMARY OBJECTIVE
@@ -22,6 +22,7 @@ Return a JSON array where each element is an incident object with this exact str
 
 [
   {
+    "incident_summary": "string: a brief, <20 word plain-language description of what happened",
     "incident_id": "string: integer starting at 1",
     "location_street": "string: street address if stated, otherwise \"\"",
     "location_city": "string: city or town if stated, otherwise \"\"",
@@ -142,6 +143,7 @@ Select exactly one.
 - "Immigration Detention"
 - "School Police"
 - "University Police"
+- "County or Town"
 - "Other"
 - "" (if not stated)
 
