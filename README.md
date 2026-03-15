@@ -2,6 +2,13 @@
 
 A pipeline for extracting structured data from federal civil rights complaints using LLMs. Complaint texts sourced from Lex Machina are fed through a structured prompt, and the JSON outputs are parsed into relational tables for analysis.
 
+
+## Updates
+
+- **March 15th, 2026:** Potentially use this to support or create research for the wandering officer problem?
+
+
+
 > **Note:** The included dataset is built on a sample of 500 extracted complaints.
 
 ---
